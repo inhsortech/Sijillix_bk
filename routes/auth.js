@@ -98,12 +98,9 @@ router.post("/login", async (req, res) => {
 
  
 router.get("/me", auth, async (req, res) => {
-  try {
-    const user = await User.findOne({
-      _id: req.user.sub,
-      organizationId: req.user.organizationId,
-    }).select("name email role active");
-
+  try { 
+    const user = await User.findById( req.user.sub).select("name email role active");
+ 
     if (!user || !user.active) {
       return res.status(401).json({
         message: "Account unavailable",
