@@ -1,126 +1,122 @@
 const router = require("express").Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+
 const User = require("../models/User");
+const Organization = require("../models/Organization");
 const auth = require("../middleware/auth");
 
-
-
-router.post("/login", async (req, res) => {
+router.post("/login", async (req, res, next) => {
   try {
-    const email = String(req.body.email || "").trim().toLowerCase();
+    const email = String(req.body.email || "")
+      .trim()
+      .toLowerCase();
+
     const password = req.body.password;
- 
-    if (!email || typeof password !== "string" || !password) {
+
+    if (!email || !password) {
       return res.status(400).json({
-        success: false,
-        message: "Email and password are required",
+        message: "Email and password required",
       });
     }
 
-    // Find user
-    const user = await User.findOne({ email }).select("+password");
- 
+    const user = await User.findOne({ email })
+      .select("+password");
+console.log(user);
 
-    if (!user) {
+    if (!user || !user.active) {
       return res.status(401).json({
-        success: false,
-        message: "User not found",
+        message: "Invalid email or password",
       });
     }
- 
-    if (!user.active) {
+
+    const matched = await bcrypt.compare(
+      password,
+      user.password
+    ); 
+
+    if (!matched) {
       return res.status(401).json({
-        success: false,
-        message: "Your account is inactive",
+        message: "Invalid email or password",
       });
     }
 
-    if (!user.password) {
-      return res.status(401).json({
-        success: false,
-        message: "Password hash not found for this user",
+    if (user.role === "super_admin") {
+      // Platform admin does not belong to a company.
+    } else {
+      if (!user.organizationId) {
+        return res.status(403).json({
+          message: "Organization not assigned",
+        });
+      }
+
+      const organization = await Organization.findOne({
+        _id: user.organizationId,
+        active: true,
       });
+
+      if (!organization) {
+        return res.status(403).json({
+          message: "Organization is inactive or unavailable",
+        });
+      }
     }
 
-    // Compare password
-    // const isMatch = await bcrypt.compare(password, user.password);
-    const isMatch = password == user.password;
- 
-
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: "Incorrect password",
-      });
-    }
-
-    if (!user.organizationId) {
-      return res.status(400).json({
-        success: false,
-        message: "Organization is not assigned to this user",
-      });
-    }
-
-    // Generate JWT
     const token = jwt.sign(
       {
         sub: user._id.toString(),
-        organizationId: user.organizationId.toString(),
+        organizationId: user.organizationId
+          ? user.organizationId.toString()
+          : null,
         role: user.role,
       },
       process.env.JWT_SECRET,
       { expiresIn: "8h" }
     );
- 
-    
-    return res.status(200).json({
+
+    res.json({
       success: true,
-      message: "Login successful",
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
+        organizationId: user.organizationId,
       },
     });
-
   } catch (error) {
-    console.error("LOGIN ERROR:", error);
-
-    return res.status(500).json({
-      success: false,
-      message: "Login failed",
-    });
+    next(error);
   }
 });
 
- 
+
 router.get("/me", auth, async (req, res) => {
-  try { 
-    const user = await User.findById( req.user.sub).select("name email role active");
- 
+  try {
+    const user = await User.findById(req.user.sub)
+      .select("name email role active organizationId");
+
     if (!user || !user.active) {
       return res.status(401).json({
         message: "Account unavailable",
       });
     }
 
-    return res.json({
+    res.json({
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
+        organizationId: user.organizationId,
       },
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({
+    res.status(500).json({
       message: "Unable to load profile",
     });
-  }
+  } 
 });
+
 
 module.exports = router;

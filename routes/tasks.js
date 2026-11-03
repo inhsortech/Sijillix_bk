@@ -1,85 +1,101 @@
 const router = require("express").Router();
+
 const Task = require("../models/Task");
-const Document = require("../models/Document");
-const AuditLog = require("../models/AuditLog");
+const User = require("../models/User");
 const auth = require("../middleware/auth");
-const { requireRole } = require("../middleware/auth");
+const { authorize } = require("../middleware/authorize");
+
 router.use(auth);
-router.get("/", async (req, res) => {
+
+router.get("/", authorize("tasks:read"), async (req, res, next) => {
   try {
-    const tasks = await Task.find({ organizationId: req.user.organizationId })
+    const tasks = await Task.find({
+      organizationId: req.user.organizationId,
+    })
       .populate("assignedTo", "name email")
-      .populate("documentId", "title expiryDate type")
-      .sort({ dueDate: 1 })
-      .limit(100);
-    res.json(tasks);
-  } catch {
-    res.status(500).json({ message: "Failed to fetch tasks" });
+      .populate("createdBy", "name");
+
+    res.json({ success: true, tasks });
+  } catch (error) {
+    next(error);
   }
 });
-router.post(
-  "/",
-  requireRole("owner", "admin", "hr", "compliance"),
-  async (req, res) => {
-    try {
-      const { title, description, dueDate, priority, documentId } = req.body;
-      if (!title) return res.status(400).json({ message: "Title is required" });
-      if (
-        documentId &&
-        !(await Document.exists({
-          _id: documentId,
-          organizationId: req.user.organizationId,
-        }))
-      )
-        return res.status(400).json({ message: "Invalid document" });
-      const task = await Task.create({
-        organizationId: req.user.organizationId,
-        title,
-        description,
-        dueDate,
-        priority,
-        documentId,
+
+router.post("/", authorize("tasks:create"), async (req, res, next) => {
+  try {
+    const {
+      title, description, assignedTo, dueDate, priority,
+    } = req.body;
+
+    if (!title) {
+      return res.status(400).json({
+        message: "Task title required",
       });
-      await AuditLog.create({
-        organizationId: req.user.organizationId,
-        userId: req.user.sub,
-        action: "task.created",
-        entityType: "Task",
-        entityId: task._id.toString(),
-      });
-      res.status(201).json(task);
-    } catch {
-      res.status(400).json({ message: "Failed to create task" });
     }
-  },
-);
-router.patch(
-  "/:id",
-  requireRole("owner", "admin", "hr", "compliance"),
-  async (req, res) => {
-    try {
-      const allowed = ["title", "description", "dueDate", "priority", "status"];
-      const update = {};
-      for (const key of allowed)
-        if (req.body[key] !== undefined) update[key] = req.body[key];
-      const task = await Task.findOneAndUpdate(
-        { _id: req.params.id, organizationId: req.user.organizationId },
-        { $set: update },
-        { new: true, runValidators: true },
-      );
-      if (!task) return res.status(404).json({ message: "Task not found" });
-      await AuditLog.create({
+
+    if (assignedTo) {
+      const assignee = await User.findOne({
+        _id: assignedTo,
         organizationId: req.user.organizationId,
-        userId: req.user.sub,
-        action: "task.updated",
-        entityType: "Task",
-        entityId: task._id.toString(),
-        details: update,
+        active: true,
       });
-      res.json(task);
-    } catch {
-      res.status(400).json({ message: "Unable to update task" });
+
+      if (!assignee) {
+        return res.status(400).json({
+          message: "Invalid task assignee",
+        });
+      }
     }
-  },
-);
+
+    const task = await Task.create({
+      organizationId: req.user.organizationId,
+      title,
+      description,
+      assignedTo,
+      dueDate,
+      priority,
+      createdBy: req.user.sub,
+    });
+
+    res.status(201).json({ success: true, task });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/:id", authorize("tasks:update"), async (req, res, next) => {
+  try {
+    const allowedFields = [
+      "title", "description", "dueDate", "priority", "status",
+    ];
+
+    const updates = {};
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    const task = await Task.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        organizationId: req.user.organizationId,
+      },
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    if (!task) {
+      return res.status(404).json({
+        message: "Task not found",
+      });
+    }
+
+    res.json({ success: true, task });
+  } catch (error) {
+    next(error);
+  }
+});
+
 module.exports = router;

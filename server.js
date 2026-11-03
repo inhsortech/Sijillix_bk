@@ -1,122 +1,78 @@
-
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
+const morgan = require("morgan");
 const rateLimit = require("express-rate-limit");
 
 const connectDB = require("./config/db");
-const startExpiryJob = require("./jobs/expiryJob");
+const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
 
-// ==========================================
-// SECURITY MIDDLEWARE
-// ==========================================
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error("JWT_SECRET must contain at least 32 characters");
+}
+
 app.use(helmet());
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
-    methods: ["GET", "POST", "PATCH", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    origin: process.env.FRONTEND_URL,
+    credentials: true,
   })
 );
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
+app.use(morgan("dev"));
 
-// ==========================================
-// HEALTH CHECK
-// ==========================================
+app.use(
+  "/api/auth/login",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+  })
+);
+
 app.get("/api/health", (req, res) => {
   res.json({
-    status: "ok",
-    service: "docutrack-api",
+    success: true,
+    message: "DocuTrack API running",
   });
 });
 
-// ==========================================
-// API ROUTES
-// ==========================================
-app.use(
-  "/api/auth",
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 20,
-  }),
-  require("./routes/auth")
-);
-
+app.use("/api/auth", require("./routes/auth"));
+app.use("/api/organizations", require("./routes/organizations"));
+app.use("/api/users", require("./routes/users"));
 app.use("/api/employees", require("./routes/employees"));
 app.use("/api/documents", require("./routes/documents"));
 app.use("/api/tasks", require("./routes/tasks"));
 app.use("/api/dashboard", require("./routes/dashboard"));
 
-// ==========================================
-// ROOT ROUTE
-// ==========================================
 app.get("/", (req, res) => {
-  res.send("DocuTrack Server Running...");
+  res.send("DocuTrack Server Running");
 });
 
-// ==========================================
-// 404 HANDLER
-// ==========================================
 app.use((req, res) => {
   res.status(404).json({
-    success: false,
-    message: "API endpoint not found",
+    message: "API route not found",
   });
 });
 
-// ==========================================
-// GLOBAL ERROR HANDLER
-// ==========================================
-app.use((err, req, res, next) => {
-  console.error("Server Error:", err);
+app.use(errorHandler);
 
-  if (res.headersSent) {
-    return next(err);
-  }
+const PORT = process.env.PORT || 5000;
 
-  res.status(err.status || 500).json({
-    success: false,
-    message:
-      err.status && err.message
-        ? err.message
-        : "Internal server error",
-  });
-});
-
-// ==========================================
-// START SERVER
-// ==========================================
 async function startServer() {
-  if (
-    !process.env.MONGO_URI ||
-    !process.env.JWT_SECRET ||
-    process.env.JWT_SECRET.length < 32
-  ) {
-    throw new Error(
-      "Configure MONGO_URI and JWT_SECRET (at least 32 characters)"
-    );
-  }
-
   await connectDB();
 
-  if (process.env.NODE_ENV === "production") {
-    startExpiryJob();
-  }
-
-  const port = process.env.PORT || 5000;
-
-  app.listen(port, () => {
-    console.log(`DocuTrack API running on port ${port}`);
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
   });
 }
-
-startServer().catch((err) => {
-  console.error("Server startup failed:", err.message);
-  process.exit(1);
-});
+ 
+startServer();

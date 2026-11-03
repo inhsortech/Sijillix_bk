@@ -1,4 +1,3 @@
-
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
@@ -6,7 +5,7 @@ const userSchema = new mongoose.Schema(
     organizationId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Organization",
-      required: true,
+      default: null,
       index: true,
     },
 
@@ -19,8 +18,8 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      trim: true,
       lowercase: true,
+      trim: true,
     },
 
     password: {
@@ -31,8 +30,8 @@ const userSchema = new mongoose.Schema(
 
     role: {
       type: String,
-      enum: ["admin", "manager", "employee"],
-      default: "employee",
+      enum: ["super_admin", "admin", "manager", "viewer"],
+      default: "viewer",
     },
 
     active: {

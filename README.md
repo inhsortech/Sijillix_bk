@@ -15,6 +15,9 @@ Health check: `GET http://localhost:5000/api/health`
 ## API
 - `POST /api/auth/login`
 - `GET /api/auth/me`
+- `GET/POST /api/organizations`
+- `PUT /api/organizations/:id` (update organization details)
+- `PATCH /api/organizations/:id/status`
 - `GET/POST /api/employees`
 - `GET/POST /api/documents`
 - `PATCH /api/documents/:id/status`
