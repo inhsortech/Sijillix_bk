@@ -37,13 +37,7 @@ app.use(
     legacyHeaders: false,
   })
 );
-
-app.get("/api/health", (req, res) => {
-  res.json({
-    success: true,
-    message: "DocuTrack API running",
-  });
-});
+ 
 
 app.use("/api/auth", require("./routes/auth"));
 app.use("/api/organizations", require("./routes/organizations"));
@@ -54,7 +48,7 @@ app.use("/api/tasks", require("./routes/tasks"));
 app.use("/api/dashboard", require("./routes/dashboard"));
 
 app.get("/", (req, res) => {
-  res.send("DocuTrack Server Running");
+  res.send("Server Running");
 });
 
 app.use((req, res) => {
